@@ -22,7 +22,7 @@ app.use(
     })
 )
 
-//cerrar sesion 
+//cerrar sesion
 app.use((req, res, next) => {
     if (req.session.inicio) {
         const ahora_inactividad = new Date();
@@ -38,7 +38,7 @@ app.use((req, res, next) => {
                 }
                 return res.send('Sesión cerrada por inactividad');
             });
-            
+            // return;
         } else {
             req.session.ultimoAcceso_inactividad = ahora_inactividad;
         }
