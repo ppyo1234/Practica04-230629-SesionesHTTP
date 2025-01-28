@@ -52,7 +52,6 @@ const getServerNetworkInfo = () => {
         }
     }
 };
-
 // Login Endpoint
 app.post("/login", (req, res) => {
     const { email, nickname, macAddress } = req.body;
@@ -63,14 +62,14 @@ app.post("/login", (req, res) => {
 
     const sessionId = uuidv4();
     const now = moment().tz(TIMEZONE);
-    const { serverIp } = getServerNetworkInfo();
+    const clientIp = getClientIp(req); // Obtener la IP del cliente
 
     sessions[sessionId] = {
         sessionId,
         email,
         nickname,
         macAddress,
-        ip: serverIp,
+        ip: clientIp, // Guardar la IP del cliente
         createdAt: now.format("YYYY-MM-DD HH:mm:ss"),
         lastAccessedAt: now,
     };
@@ -122,10 +121,12 @@ app.post("/update", (req, res) => {
         },
     });
 });
-
 // Estado de la sesión
 app.get("/status", (req, res) => {
     const sessionId = req.query.sessionId;
+
+    // Obtener la IP del servidor
+    const { serverIp } = getServerNetworkInfo();
 
     if (!sessionId || !sessions[sessionId]) {
         return res.status(404).json({ message: "No hay sesión activa." });
@@ -136,17 +137,20 @@ app.get("/status", (req, res) => {
     const lastAccessedAt = moment(session.lastAccessedAt);
     const inactivityDuration = moment.duration(now.diff(lastAccessedAt));
     const sessionDuration = moment.duration(now.diff(moment(session.createdAt)));
+    const { serverMac } = getServerNetworkInfo(); // Obtener la MAC del servidor
 
     res.status(200).json({
         message: "Sesión activa.",
         session: {
             ...session,
+            serverIp,
+            serverMac, // MAC del servidor
             inactivity: `${inactivityDuration.minutes()} minutos y ${inactivityDuration.seconds()} segundos`,
             totalDuration: `${sessionDuration.hours()} horas, ${sessionDuration.minutes()} minutos y ${sessionDuration.seconds()} segundos`,
         },
     });
 });
-
+    
 // Endpoint para obtener la lista de sesiones activas
 app.get("/sessions", (req, res) => {
     if (Object.keys(sessions).length === 0) {
