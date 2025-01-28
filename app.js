@@ -12,7 +12,7 @@ app.use(express.json());
 app.use(cors());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// await mongoose.connect("mongodb+srv://230629:a9zkZvci3FqyQe4E@cluster.mongodb.net/API-AWI4_0-230629");
+// await mongoose.connect("mongodb+srv://230629:password@cluster.mongodb.net/API-AWI4_0-230629");
 
 /* console.log("Conectado a MongoDB");*/
 
