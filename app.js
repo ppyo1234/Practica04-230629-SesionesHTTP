@@ -28,30 +28,63 @@ app.use(
 // Zona horaria por defecto
 const TIMEZONE = "America/Mexico_City"; // Ajusta según tu región
 
+
 // Sesiones almacenadas en memoria
 const sessions = {};
 
-// Función de utilidad para obtener la IP del cliente
+// Tiempo máximo de inactividad en milisegundos (2 minutos)
+const MAX_INACTIVITY_TIME = 2 * 60 * 1000;
+
+// Intervalo para limpiar sesiones inactivas (cada minuto)
+setInterval(() => {
+    const now = moment().tz(TIMEZONE);
+    for (const sessionId in sessions) {
+        const session = sessions[sessionId];
+        const lastAccessedAt = moment(session.lastAccessedAt);
+        const inactivityDuration = now.diff(lastAccessedAt);
+
+        if (inactivityDuration > MAX_INACTIVITY_TIME) {
+            console.log(`Eliminando sesión por inactividad: ${sessionId}`);
+            delete sessions[sessionId];
+        }
+    }
+}, 60 * 1000); // Revisión cada minuto
+
+
 const getClientIp = (req) => {
-    return (
-        req.headers["x-forwarded-for"] ||
-        req.connection.remoteAddress ||
-        req.socket.remoteAddress ||
-        req.connection.socket?.remoteAddress
-    );
+    let ip = req.headers["x-forwarded-for"] ||
+             req.connection?.remoteAddress ||
+             req.socket?.remoteAddress ||
+             req.connection?.socket?.remoteAddress;
+
+    // Si la IP tiene el prefijo "::ffff:", eliminarlo para obtener solo IPv4
+    if (ip && ip.startsWith("::ffff:")) {
+        ip = ip.substring(7);
+    }
+
+    // Si la IP es 127.0.0.1, intentar obtener la IP real de la red
+    if (ip === "127.0.0.1" || ip === "0.0.0.0") {
+        const { serverIp } = getServerNetworkInfo();
+        ip = serverIp; // Reemplazar con la IP de la red local
+    }
+
+    return ip;
 };
 
-// Función de utilidad para obtener información de red del servidor
+
+
 const getServerNetworkInfo = () => {
     const interfaces = os.networkInterfaces();
     for (const name in interfaces) {
         for (const iface of interfaces[name]) {
-            if (iface.family === `IPv4` && !iface.internal) {
+            if (iface.family === "IPv4" && !iface.internal) {
                 return { serverIp: iface.address, serverMac: iface.mac };
             }
         }
     }
+    return { serverIp: "0.0.0.0", serverMac: "00:00:00:00:00:00" }; // Fallback en caso de error
 };
+
 // Login Endpoint
 app.post("/login", (req, res) => {
     const { email, nickname, macAddress } = req.body;
@@ -121,12 +154,13 @@ app.post("/update", (req, res) => {
         },
     });
 });
+
 // Estado de la sesión
 app.get("/status", (req, res) => {
     const sessionId = req.query.sessionId;
 
-    // Obtener la IP del servidor
-    const { serverIp } = getServerNetworkInfo();
+    // Obtener la IP y MAC del servidor
+    const { serverIp, serverMac } = getServerNetworkInfo();
 
     if (!sessionId || !sessions[sessionId]) {
         return res.status(404).json({ message: "No hay sesión activa." });
@@ -137,7 +171,6 @@ app.get("/status", (req, res) => {
     const lastAccessedAt = moment(session.lastAccessedAt);
     const inactivityDuration = moment.duration(now.diff(lastAccessedAt));
     const sessionDuration = moment.duration(now.diff(moment(session.createdAt)));
-    const { serverMac } = getServerNetworkInfo(); // Obtener la MAC del servidor
 
     res.status(200).json({
         message: "Sesión activa.",
@@ -150,30 +183,43 @@ app.get("/status", (req, res) => {
         },
     });
 });
-    
+
 // Endpoint para obtener la lista de sesiones activas
 app.get("/sessions", (req, res) => {
     if (Object.keys(sessions).length === 0) {
         return res.status(200).json({ message: "No hay sesiones activas en este momento." });
     }
 
+    // Obtener la IP y MAC del servidor
+    const { serverIp, serverMac } = getServerNetworkInfo();
+
     // Generar un resumen de las sesiones activas
-    const sessionList = Object.values(sessions).map((session) => ({
-        sessionId: session.sessionId,
-        email: session.email,
-        nickname: session.nickname,
-        ip: session.ip,
-        macAddress: session.macAddress,
-        createdAt: session.createdAt,
-        lastAccessedAt: session.lastAccessedAt.format("YYYY-MM-DD HH:mm:ss"),
-    }));
+    const now = moment().tz(TIMEZONE);
+    const sessionList = Object.values(sessions).map((session) => {
+        const lastAccessedAt = moment(session.lastAccessedAt);
+        const inactivityDuration = moment.duration(now.diff(lastAccessedAt));
+        const sessionDuration = moment.duration(now.diff(moment(session.createdAt)));
+
+        return {
+            sessionId: session.sessionId,
+            email: session.email,
+            nickname: session.nickname,
+            ip: session.ip,
+            serverIp,
+            macAddress: session.macAddress,
+            serverMac,
+            createdAt: session.createdAt,
+            inactivity: `${inactivityDuration.minutes()} minutos y ${inactivityDuration.seconds()} segundos`,
+            totalDuration: `${sessionDuration.hours()} horas, ${sessionDuration.minutes()} minutos y ${sessionDuration.seconds()} segundos`,
+            lastAccessedAt: lastAccessedAt.format("YYYY-MM-DD HH:mm:ss"),
+        };
+    });
 
     res.status(200).json({
         message: "Lista de sesiones activas:",
         activeSessions: sessionList,
     });
 });
-
 
 // Ruta raíz
 app.get("/", (req, res) => {
